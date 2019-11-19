@@ -15,7 +15,7 @@ EnableFastBfast = function()
     } else print("Using reference BFAST, install appelmar/bfast for a speed increase")
 }
 
-BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, Order=3, t0 = as.Date("2014-01-01"), NoBreakValue = -9999)
+BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, Order=3, t0 = as.Date("2014-01-01"), NoBreakValue = -9999, breaks="LWZ")
 {
     # Utility functions: here so that the scope is correct for SparkR
     GetBreakNumberWhole = function(bfts)
@@ -73,6 +73,14 @@ BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, 
         rep(NoBreakValue, length(Years)*3)
     }
     
+    #bfts = bfastts(pixel, dates, type=TSType)
+    bfts = ts(pixel, start=DateStart, frequency = DateFrequency)
+    
+    # Handling dates
+    dates = as.Date(date_decimal(as.numeric(time(bfts))))
+    DateRange = range(dates)
+    Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
+    
     # Check whether we have enough non-NA pixels for running breakpoints.full, without doing preprocessing.
     # The right hand side formula calculates the columns in the bfastpp object.
     #if (floor(sum(!is.na(pixel)) * GetBreakNumber(dates)) <= 4+(Order-1)*2 )
@@ -86,14 +94,6 @@ BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, 
     # WARNING: need to check whether the threshold makes sense for non-EVI
     #if (mean(pixel, na.rm=TRUE) < 500)
     #    return(ReturnNoBreak())
-    
-    #bfts = bfastts(pixel, dates, type=TSType)
-    bfts = ts(pixel, start=DateStart, frequency = DateFrequency)
-    
-    # Handling dates
-    dates = as.Date(date_decimal(as.numeric(time(bfts))))
-    DateRange = range(dates)
-    Years = lubridate::year(DateRange[1]):lubridate::year(DateRange[2])
     
     # Use integers
     if (GetBreakNumberWhole(bfts) <= 4+(Order-1)*2 || GetBreakNumberWhole(bfts) >= floor(sum(!is.na(pixel))/2))
@@ -109,7 +109,7 @@ BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, 
     } else if (testforabreak$p.value > 0.05) # If test says there should be no breaks
         return(ReturnNoBreak())
     
-    bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts)),
+    bf = tryCatch(breakpoints(response ~ (harmon + trend), data=bpp, h=GetBreakNumberWhole(bfts), breaks=breaks),
                   error = function(e){print(e); traceback(e); cat(c("Note: pixel values were: ", pixel, "\n")); return(NULL)})
     
     if (is.null(bf))
@@ -119,12 +119,12 @@ BFAST0NBreaks = function(pixel, DateStart=2009, DateFrequency=23, DateOffset=8, 
     }
     
     # Direct returns without calling functions
-    if (all(is.na(bf$breakpoints)))
+    if (all(is.na(breakpoints(bf, breaks=breaks)$breakpoints)))
         return(ReturnNoBreak())
     
     # Make a matrix for the output
     OutMatrix = matrix(NoBreakValue, nrow=length(Years), ncol=3, dimnames=list(Years, c("confint.neg", "breakpoint", "confint.pos")))
-    ConfInts = confint(bf)$confint # Get confidence interval
+    ConfInts = confint(bf, breaks=breaks)$confint # Get confidence interval
     BreakpointYears = as.integer(sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp)) # Get years at which breakpoints happened
     if (any(duplicated(BreakpointYears))) # Sanity check: should never be true
         cat(c("ERROR: Duplicate breakpoint years! Years:", BreakpointYears, "Dates:", sapply(ConfInts[,"breakpoints"], BreakpointDate, bpp), "Breakpoints:", ConfInts[,"breakpoints"], "\n"))
